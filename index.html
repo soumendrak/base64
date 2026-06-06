@@ -49,6 +49,23 @@ h1 {
 }
 .tab.active { background: var(--accent); color: #fff; }
 .tab:hover:not(.active) { background: var(--accent-subtle); }
+
+/* Mode toggle */
+.mode-toggle {
+    display: flex; gap: 0; margin-bottom: 1rem;
+    background: var(--bg); border-radius: var(--radius-sm); overflow: hidden;
+    justify-content: center;
+}
+.mode-btn {
+    padding: 0.35rem 1rem; text-align: center; cursor: pointer;
+    color: var(--text-dim); font-size: 0.75rem; font-weight: 500;
+    transition: all 0.2s; user-select: none; border: 1px solid var(--text-muted);
+}
+.mode-btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.mode-btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: none; }
+.mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.mode-btn:hover:not(.active) { background: var(--accent-subtle); border-color: var(--accent); }
+
 .panel { display: none; }
 .panel.active { display: block; }
 .io-group { margin-bottom: 1rem; }
@@ -107,6 +124,16 @@ textarea.output { min-height: 80px; cursor: default; }
 }
 .file-info .clear-btn:hover { color: #ff4444; background: rgba(255,68,68,0.1); }
 .hidden-input { display: none; }
+/* Mode indicator */
+.mode-indicator {
+    display: inline-block;
+    font-size: 0.65rem;
+    color: var(--accent);
+    background: var(--accent-subtle);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    margin-left: 0.4rem;
+}
 footer { margin-top: 2rem; font-size: 0.7rem; color: var(--text-muted); text-align: center; }
 footer a { color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
 footer a:hover { color: var(--accent); }
@@ -116,6 +143,11 @@ footer a:hover { color: var(--accent); }
 <div class="container">
     <h1>Base64</h1>
     <p class="tagline">Encode or decode text and files</p>
+    <!-- Mode toggle -->
+    <div class="mode-toggle" id="modeToggle">
+        <div class="mode-btn active" data-mode="standard">Standard</div>
+        <div class="mode-btn" data-mode="urlsafe">URL-safe</div>
+    </div>
     <div class="tabs">
         <div class="tab active" data-tab="encode">Encode</div>
         <div class="tab" data-tab="decode">Decode</div>
@@ -144,7 +176,7 @@ footer a:hover { color: var(--accent); }
             <span class="copy-msg" id="encodeCopyMsg">Copied!</span>
         </div>
         <div class="io-group">
-            <label for="encodeOutput">Base64 Output</label>
+            <label for="encodeOutput">Base64 Output <span class="mode-indicator" id="encodeModeLabel">Standard</span></label>
             <textarea class="output" id="encodeOutput" readonly placeholder="Result will appear here..."></textarea>
         </div>
     </div>
@@ -170,6 +202,27 @@ footer a:hover { color: var(--accent); }
     <a href="https://github.com/soumendrak" target="_blank">soumendrak</a> &mdash; licensed under MIT
 </footer>
 <script>
+(function(){
+'use strict';
+
+let currentMode = 'standard'; // 'standard' or 'urlsafe'
+
+// Mode toggle
+document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentMode = this.dataset.mode;
+        document.getElementById('encodeModeLabel').textContent = currentMode === 'urlsafe' ? 'URL-safe' : 'Standard';
+        // Re-encode if there's input
+        const encodeInput = document.getElementById('encodeInput').value;
+        if (encodeInput) doEncode();
+        // Re-decode if there's input
+        const decodeInput = document.getElementById('decodeInput').value.trim();
+        if (decodeInput) doDecode();
+    });
+});
+
 // Tab switching
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', function() {
@@ -180,12 +233,41 @@ document.querySelectorAll('.tab').forEach(tab => {
     });
 });
 
+// Helpers
+function standardToUrlsafe(s) {
+    return s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function urlsafeToStandard(s) {
+    return s.replace(/-/g, '+').replace(/_/g, '/');
+}
+
+function base64Encode(str) {
+    const standard = btoa(unescape(encodeURIComponent(str)));
+    if (currentMode === 'urlsafe') {
+        return standardToUrlsafe(standard);
+    }
+    return standard;
+}
+
+function base64Decode(str) {
+    let clean = str.trim();
+    // Auto-detect: if contains - or _, treat as URL-safe
+    const hasUrlSafeChars = /[-_]/.test(clean);
+    if (hasUrlSafeChars) {
+        clean = urlsafeToStandard(clean);
+    }
+    // Add padding if needed
+    while (clean.length % 4 !== 0) clean += '=';
+    return decodeURIComponent(escape(atob(clean)));
+}
+
 // Encode
 function doEncode() {
     const input = document.getElementById('encodeInput').value;
     const output = document.getElementById('encodeOutput');
     try {
-        output.value = btoa(unescape(encodeURIComponent(input)));
+        output.value = base64Encode(input);
     } catch(e) {
         output.value = 'Error: Invalid input for Base64 encoding.';
     }
@@ -194,15 +276,18 @@ function doEncode() {
 document.getElementById('encodeBtn').addEventListener('click', doEncode);
 
 // Decode
-document.getElementById('decodeBtn').addEventListener('click', function() {
+function doDecode() {
     const input = document.getElementById('decodeInput').value.trim();
     const output = document.getElementById('decodeOutput');
+    if (!input) { output.value = ''; return; }
     try {
-        output.value = decodeURIComponent(escape(atob(input)));
+        output.value = base64Decode(input);
     } catch(e) {
         output.value = 'Error: Invalid Base64 string.';
     }
-});
+}
+
+document.getElementById('decodeBtn').addEventListener('click', doDecode);
 
 // Copy buttons
 function setupCopy(btnId, msgId, sourceId) {
@@ -214,7 +299,6 @@ function setupCopy(btnId, msgId, sourceId) {
             msg.classList.add('show');
             setTimeout(() => msg.classList.remove('show'), 2000);
         }).catch(() => {
-            // Fallback
             const ta = document.getElementById(sourceId);
             ta.select();
             document.execCommand('copy');
@@ -261,7 +345,7 @@ function handleFile(file) {
     reader.onload = function(e) {
         const base64 = e.target.result.split(',')[1] || e.target.result;
         document.getElementById('encodeInput').value = '[File: ' + file.name + ']';
-        document.getElementById('encodeOutput').value = base64;
+        document.getElementById('encodeOutput').value = currentMode === 'urlsafe' ? standardToUrlsafe(base64) : base64;
     };
     reader.readAsDataURL(file);
 }
@@ -279,9 +363,8 @@ function formatFileSize(bytes) {
     return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
-// Also encode on input change if text or encode button
+// Auto-encode on input change
 document.getElementById('encodeInput').addEventListener('input', function() {
-    // Auto-encode only if no file is loaded
     if (fileInfo.style.display !== 'flex') {
         doEncode();
     }
@@ -293,11 +376,12 @@ document.getElementById('decodeInput').addEventListener('input', function() {
     const output = document.getElementById('decodeOutput');
     if (!input) { output.value = ''; return; }
     try {
-        output.value = decodeURIComponent(escape(atob(input)));
+        output.value = base64Decode(input);
     } catch(e) {
         // Don't show error during typing
     }
 });
+})();
 </script>
 </body>
 </html>
