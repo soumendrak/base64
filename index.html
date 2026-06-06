@@ -49,6 +49,17 @@ h1 {
 }
 .tab.active { background: var(--accent); color: #fff; }
 .tab:hover:not(.active) { background: var(--accent-subtle); }
+.mode-tabs {
+    display: flex; gap: 0; margin-bottom: 1rem;
+    background: var(--bg); border-radius: var(--radius-sm); overflow: hidden;
+    font-size: 0.75rem;
+}
+.mode-tab {
+    flex: 1; padding: 0.35rem 0.5rem; text-align: center; cursor: pointer;
+    color: var(--text-dim); transition: all 0.2s; user-select: none;
+}
+.mode-tab.active { background: var(--accent-glow); color: var(--accent); font-weight: 600; }
+.mode-tab:hover:not(.active) { background: var(--accent-subtle); }
 .panel { display: none; }
 .panel.active { display: block; }
 .io-group { margin-bottom: 1rem; }
@@ -123,6 +134,10 @@ footer a:hover { color: var(--accent); }
 
     <!-- Encode Panel -->
     <div class="panel active" id="panel-encode">
+        <div class="mode-tabs" id="encodeModeTabs">
+            <div class="mode-tab active" data-mode="standard">Standard</div>
+            <div class="mode-tab" data-mode="urlsafe">URL-safe</div>
+        </div>
         <div class="file-zone" id="encodeDropZone">
             <div class="icon">📁</div>
             <div class="text">Click or drag &amp; drop a file to encode</div>
@@ -180,12 +195,46 @@ document.querySelectorAll('.tab').forEach(tab => {
     });
 });
 
+// Mode tabs (standard vs url-safe)
+let currentMode = 'standard';
+document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        currentMode = this.dataset.mode;
+        doEncode();
+    });
+});
+
+function toBase64(str, mode) {
+    const standard = btoa(unescape(encodeURIComponent(str)));
+    if (mode === 'urlsafe') {
+        return standard.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    return standard;
+}
+
+function fromBase64(str, mode) {
+    let normalized = str;
+    if (mode === 'urlsafe') {
+        normalized = str.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        while (normalized.length % 4 !== 0) normalized += '=';
+    }
+    return decodeURIComponent(escape(atob(normalized)));
+}
+
+function detectMode(str) {
+    if (str.includes('-') || str.includes('_')) return 'urlsafe';
+    return 'standard';
+}
+
 // Encode
 function doEncode() {
     const input = document.getElementById('encodeInput').value;
     const output = document.getElementById('encodeOutput');
     try {
-        output.value = btoa(unescape(encodeURIComponent(input)));
+        output.value = toBase64(input, currentMode);
     } catch(e) {
         output.value = 'Error: Invalid input for Base64 encoding.';
     }
@@ -197,8 +246,10 @@ document.getElementById('encodeBtn').addEventListener('click', doEncode);
 document.getElementById('decodeBtn').addEventListener('click', function() {
     const input = document.getElementById('decodeInput').value.trim();
     const output = document.getElementById('decodeOutput');
+    if (!input) { output.value = ''; return; }
     try {
-        output.value = decodeURIComponent(escape(atob(input)));
+        const detected = detectMode(input);
+        output.value = fromBase64(input, detected);
     } catch(e) {
         output.value = 'Error: Invalid Base64 string.';
     }
@@ -293,7 +344,8 @@ document.getElementById('decodeInput').addEventListener('input', function() {
     const output = document.getElementById('decodeOutput');
     if (!input) { output.value = ''; return; }
     try {
-        output.value = decodeURIComponent(escape(atob(input)));
+        const detected = detectMode(input);
+        output.value = fromBase64(input, detected);
     } catch(e) {
         // Don't show error during typing
     }
